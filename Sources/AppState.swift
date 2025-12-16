@@ -4,6 +4,7 @@ import ServiceManagement
 @preconcurrency import UserNotifications
 import HotKey
 import Carbon
+import Sparkle
 
 @Observable
 @MainActor
@@ -35,6 +36,9 @@ final class AppState: NSObject {
 
     // TODO: Hotkey feature disabled for now - will be improved in next version
     var hotkeyEnabled: Bool = false
+
+    // MARK: - Update Manager
+    let updateManager = UpdateManager()
 
     // MARK: - Private
     private let scanner = PortScanner()

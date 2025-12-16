@@ -1,8 +1,10 @@
 import SwiftUI
 import ApplicationServices
+import Sparkle
 
 struct SettingsView: View {
     @Bindable var state: AppState
+    @ObservedObject var updateManager: UpdateManager
     @State private var newFavoritePort = ""
     @State private var newWatchPort = ""
     @State private var watchOnStart = true
@@ -157,6 +159,62 @@ struct SettingsView: View {
             }
             .padding()
             .tabItem { Label("Watch", systemImage: "eye") }
+
+            // Updates Tab
+            VStack(alignment: .leading, spacing: 16) {
+                // Version Info
+                HStack {
+                    Text("PortKiller")
+                        .font(.headline)
+                    Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")")
+                        .foregroundStyle(.secondary)
+                }
+
+                Divider()
+
+                // Check for Updates Button
+                Button {
+                    updateManager.checkForUpdates()
+                } label: {
+                    Label("Check for Updates", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .disabled(!updateManager.canCheckForUpdates)
+
+                // Last Check Date
+                if let lastCheck = updateManager.lastUpdateCheckDate {
+                    Text("Last checked: \(lastCheck.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Divider()
+
+                // Auto Update Settings
+                Toggle("Automatically check for updates", isOn: Binding(
+                    get: { updateManager.automaticallyChecksForUpdates },
+                    set: { updateManager.automaticallyChecksForUpdates = $0 }
+                ))
+                .toggleStyle(.switch)
+
+                Toggle("Automatically download updates", isOn: Binding(
+                    get: { updateManager.automaticallyDownloadsUpdates },
+                    set: { updateManager.automaticallyDownloadsUpdates = $0 }
+                ))
+                .toggleStyle(.switch)
+
+                Spacer()
+
+                // GitHub Link
+                HStack {
+                    Spacer()
+                    Link(destination: URL(string: "https://github.com/productdevbook/port-killer/releases")!) {
+                        Label("View on GitHub", systemImage: "link")
+                            .font(.caption)
+                    }
+                }
+            }
+            .padding()
+            .tabItem { Label("Updates", systemImage: "arrow.down.circle") }
         }
         .frame(width: 350, height: 380)
     }

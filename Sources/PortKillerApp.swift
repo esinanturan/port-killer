@@ -17,7 +17,7 @@ struct PortKillerApp: App {
         .menuBarExtraStyle(.window)
 
         Window("Settings", id: "settings") {
-            SettingsView(state: state)
+            SettingsView(state: state, updateManager: state.updateManager)
         }
         .windowResizability(.contentSize)
     }
