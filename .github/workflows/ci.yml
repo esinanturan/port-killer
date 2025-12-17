@@ -34,11 +34,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-spm-
 
-      - name: Resolve dependencies
-        run: swift package resolve
-
       - name: Build (Debug)
-        run: swift build
+        run: swift build 2>&1 | tee build.log
+
+      - name: Check for warnings
+        run: |
+          if grep -q "warning:" build.log; then
+            echo "::warning::Compiler warnings found:"
+            grep "warning:" build.log
+          else
+            echo "No compiler warnings."
+          fi
 
       - name: Build (Release)
         run: swift build -c release
@@ -46,68 +52,21 @@ jobs:
       - name: Run Tests
         run: swift test --parallel
 
+      - name: Build App Bundle
+        run: |
+          echo "Testing app bundle creation..."
+          ./scripts/build-app.sh
+
+          # Verify bundle structure
+          APP=".build/release/PortKiller.app"
+          [ -f "$APP/Contents/MacOS/PortKiller" ] || { echo "Missing executable"; exit 1; }
+          [ -f "$APP/Contents/Info.plist" ] || { echo "Missing Info.plist"; exit 1; }
+          [ -d "$APP/Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle" ] || { echo "Missing KeyboardShortcuts bundle"; exit 1; }
+          [ -d "$APP/Contents/Frameworks/Sparkle.framework" ] || { echo "Missing Sparkle framework"; exit 1; }
+          echo "App bundle structure verified."
+
   lint:
-    name: Lint
-    runs-on: macos-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Check for TODO/FIXME comments
-        run: |
-          echo "Checking for TODO/FIXME comments..."
-          TODOS=$(grep -rn "TODO\|FIXME" Sources/ --include="*.swift" || true)
-          if [ -n "$TODOS" ]; then
-            echo "Found TODO/FIXME comments:"
-            echo "$TODOS"
-            echo ""
-            echo "Note: Please address these before merging."
-          else
-            echo "No TODO/FIXME comments found."
-          fi
-
-      - name: Check file line counts
-        run: |
-          echo "Checking for files over 300 lines..."
-          LARGE_FILES=""
-          for file in $(find Sources -name "*.swift"); do
-            LINES=$(wc -l < "$file")
-            if [ "$LINES" -gt 300 ]; then
-              LARGE_FILES="$LARGE_FILES\n$file: $LINES lines"
-            fi
-          done
-
-          if [ -n "$LARGE_FILES" ]; then
-            echo "Warning: The following files exceed 300 lines:"
-            echo -e "$LARGE_FILES"
-            echo ""
-            echo "Consider splitting these files for better maintainability."
-          else
-            echo "All files are within acceptable line limits."
-          fi
-
-      - name: Verify documentation exists
-        run: |
-          echo "Checking for missing file documentation..."
-          MISSING_DOCS=""
-          for file in $(find Sources -name "*.swift"); do
-            # Check if file starts with a doc comment (/** or ///)
-            FIRST_LINES=$(head -20 "$file")
-            if ! echo "$FIRST_LINES" | grep -q "^///\|^/\*\*\|^\s*\*"; then
-              MISSING_DOCS="$MISSING_DOCS\n$file"
-            fi
-          done
-
-          if [ -n "$MISSING_DOCS" ]; then
-            echo "Warning: The following files may be missing documentation headers:"
-            echo -e "$MISSING_DOCS"
-          else
-            echo "All files appear to have documentation headers."
-          fi
-
-  validate-package:
-    name: Validate Package
+    name: Lint & Validate
     runs-on: macos-latest
 
     steps:
@@ -122,11 +81,66 @@ jobs:
       - name: Validate Package.swift
         run: |
           echo "Validating Package.swift..."
-          swift package describe
-          echo ""
-          echo "Package structure is valid."
+          swift package describe > /dev/null
+          echo "✓ Package structure is valid"
 
       - name: Check dependencies
         run: |
-          echo "Checking dependencies..."
-          swift package show-dependencies
+          echo "Dependencies:"
+          swift package show-dependencies --format flat
+
+      - name: Check for TODO/FIXME comments
+        run: |
+          echo "Checking for TODO/FIXME comments..."
+          TODOS=$(grep -rn "TODO\|FIXME" Sources/ --include="*.swift" || true)
+          if [ -n "$TODOS" ]; then
+            echo "::notice::Found TODO/FIXME comments (not blocking):"
+            echo "$TODOS"
+          else
+            echo "✓ No TODO/FIXME comments found"
+          fi
+
+      - name: Check file line counts
+        run: |
+          echo "Checking for files over 300 lines..."
+          FOUND=0
+          while IFS= read -r file; do
+            LINES=$(wc -l < "$file" | tr -d ' ')
+            if [ "$LINES" -gt 300 ]; then
+              echo "::warning file=$file::$file has $LINES lines (max 300)"
+              FOUND=1
+            fi
+          done < <(find Sources -name "*.swift")
+
+          if [ "$FOUND" -eq 0 ]; then
+            echo "✓ All files are within 300 line limit"
+          fi
+
+      - name: Verify documentation headers
+        run: |
+          echo "Checking for documentation headers..."
+          MISSING=""
+          while IFS= read -r file; do
+            # Check first 10 lines for doc comments
+            if ! head -10 "$file" | grep -qE "^///|^/\*\*|^\s*\*"; then
+              MISSING="$MISSING$file\n"
+            fi
+          done < <(find Sources -name "*.swift")
+
+          if [ -n "$MISSING" ]; then
+            echo "::notice::Files without documentation headers:"
+            echo -e "$MISSING"
+          else
+            echo "✓ All files have documentation headers"
+          fi
+
+      - name: Check for print statements
+        run: |
+          echo "Checking for debug print statements..."
+          PRINTS=$(grep -rn "print(" Sources/ --include="*.swift" | grep -v "// DEBUG" || true)
+          if [ -n "$PRINTS" ]; then
+            echo "::notice::Found print statements (consider removing):"
+            echo "$PRINTS" | head -10
+          else
+            echo "✓ No print statements found"
+          fi
